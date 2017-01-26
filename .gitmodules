@@ -1,3 +1,3 @@
 [submodule "/glm"]
 	path = /glm
-	url = https://github.com/g-truc/glm/tree/master/glm
+	url = https://github.com/g-truc/glm.git
