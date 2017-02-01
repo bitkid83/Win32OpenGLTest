@@ -70,9 +70,12 @@ struct gl_platform_ctx {
 	HGLRC hglrc;
 };
 
-GLuint VBO;
-GLuint VAO;
-GLuint shaderProgram;
+struct gl_workingdata {
+	GLuint VBO;
+	GLuint VAO;
+	GLuint shaderProg;
+};
+
 
 float rot = 0.0f;
 
@@ -191,13 +194,13 @@ static inline bool set_pixel_format_and_swap_chain(HDC hdc)
 	return true;
 }
 
-void compile_shader_from_file(const char *path, GLenum shaderType, GLuint *data)
+GLuint compile_shader_from_file(const char *path, GLenum shaderType)
 {
 	std::string contents;
 	std::ifstream shaderStream(path, std::ios::in);
 	if (!shaderStream.is_open()) {
 		// error opening file
-		return;
+		return 0;
 	}
 
 	std::string line;
@@ -218,47 +221,50 @@ void compile_shader_from_file(const char *path, GLenum shaderType, GLuint *data)
 	if (!success) {
 		glGetShaderInfoLog(shaderBytes, 512, NULL, infoLog);
 		OutputDebugStringA(infoLog);
-	}
-	
-	*data = shaderBytes;
+		return 0;
+	}	
 
-	return;
+	return shaderBytes;
 }
 
-void setup_scene()
-{	
-	GLuint vertexShader;
-	GLuint fragmentShader;
-	compile_shader_from_file("test.vs", GL_VERTEX_SHADER, &vertexShader);
-	compile_shader_from_file("test.fs", GL_FRAGMENT_SHADER, &fragmentShader);
-
-	// link shader programs
+GLuint create_shader_program(GLuint *vertexShader, GLuint *fragmentShader)
+{
+	GLuint shaderProgram;
 	GLint success;
-	GLchar infoLog[512];	
+	GLchar infoLog[512];
+	
 	shaderProgram = glCreateProgram();
-	glAttachShader(shaderProgram, vertexShader);
-	glAttachShader(shaderProgram, fragmentShader);
+	glAttachShader(shaderProgram, *vertexShader);
+	glAttachShader(shaderProgram, *fragmentShader);
 	glLinkProgram(shaderProgram);
+	
 	glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
 	if (!success) {
 		glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
 		OutputDebugStringA(infoLog);
+		return 0;
 	}
 	
-	glDeleteShader(vertexShader);
-	glDeleteShader(fragmentShader);
+	glDeleteShader(*vertexShader);
+	glDeleteShader(*fragmentShader);
+	
+	return shaderProgram;
+}
 
-	
+void setup_scene(gl_workingdata *gldata)
+{	
+	if (!gldata) { return; }
+
 	// vertex buffer object	
-	glGenVertexArrays(1, &VAO);
-	glGenBuffers(1, &VBO);	
+	glGenVertexArrays(1, &gldata->VAO);
+	glGenBuffers(1, &gldata->VBO);	
 	
-	glBindBuffer(GL_ARRAY_BUFFER, VBO);
+	glBindBuffer(GL_ARRAY_BUFFER, gldata->VBO);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(gVertices), gVertices, GL_STATIC_DRAW);
 
-	glBindVertexArray(VAO);
+	glBindVertexArray(gldata->VAO);
 	{
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), (GLvoid*)0);		
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), (GLvoid *)0);		
 		glEnableVertexAttribArray(0);
 	}
 	glBindVertexArray(0);
@@ -267,14 +273,19 @@ void setup_scene()
 	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);	
 }
 
-void display_scene(HDC hdc)
+
+
+void display_scene(HDC hdc, gl_workingdata *gldata)
 {	
+	if (!gldata) { return; } // oops! D:
+	GLuint prog = gldata->shaderProg;
+	GLuint vao = gldata->VAO;
+
 	POINT p;
 	GetCursorPos(&p);
-	glUseProgram(shaderProgram);
 	
-	GLint uniformColor = glGetUniformLocation(shaderProgram, "input_color");
-	
+	glUseProgram(prog);
+		
 	// camera
 	glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 3.0f);
 	glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
@@ -282,9 +293,15 @@ void display_scene(HDC hdc)
 
 	// transform matrices
 	glm::mat4 model, view, proj;
-	GLint modelLoc = glGetUniformLocation(shaderProgram, "model");
-	GLint viewLoc = glGetUniformLocation(shaderProgram, "view");
-	GLint projLoc = glGetUniformLocation(shaderProgram, "projection");
+
+	glm::vec3 lightPosition = glm::vec3(0.0f, 5.5f, -15.5f);
+	GLint lightLoc = glGetUniformLocation(prog, "light_pos");
+	glUniform3fv(lightLoc, 1, glm::value_ptr(lightPosition));
+
+	
+	GLint modelLoc = glGetUniformLocation(prog, "model");
+	GLint viewLoc = glGetUniformLocation(prog, "view");
+	GLint projLoc = glGetUniformLocation(prog, "projection");
 
 	rot += 0.0001f;
 	if (rot >= 360.0f) { rot = 0.0f; }
@@ -301,11 +318,12 @@ void display_scene(HDC hdc)
 	glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
 
 	//glUniform3f(uniformColor, (float)(fabs(p.x / 2.0f) / 10000.f) * 2, (float)(p.y / 10000.f) * 2, 0.0f);
+	GLint uniformColor = glGetUniformLocation(prog, "input_color");
 	glUniform3f(uniformColor, 1.0f, 0.0f, 0.0f);
 	glClearColor(0, 0, 0, 255);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);	
 	
-	glBindVertexArray(VAO);
+	glBindVertexArray(vao);
 	glDrawArrays(GL_TRIANGLES, 0, 12);	
 	glBindVertexArray(0);
 
@@ -329,8 +347,9 @@ void check_gl_version(int32_t *maj, int32_t *min)
 
 int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
 {		
-	window_info *wi = init_window_info(WINDOW_WIDTH, WINDOW_HEIGHT, window_name); // free me
-	gl_platform_ctx *plat = (gl_platform_ctx *)malloc(sizeof(gl_platform_ctx)); // free me
+	window_info *wi = init_window_info(WINDOW_WIDTH, WINDOW_HEIGHT, window_name);
+	gl_platform_ctx *plat = (gl_platform_ctx *)malloc(sizeof(gl_platform_ctx));
+	gl_workingdata wrk = { 0 };
 
 	if (!register_window_class()) {
 		return 1;
@@ -352,7 +371,11 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 	SetForegroundWindow(plat->hwnd);
 	SetFocus(plat->hwnd);
 
-	setup_scene();
+	GLuint vertexShader = compile_shader_from_file("test.vs", GL_VERTEX_SHADER);
+	GLuint fragmentShader = compile_shader_from_file("test.fs", GL_FRAGMENT_SHADER);
+	wrk.shaderProg = create_shader_program(&vertexShader, &fragmentShader);
+
+	setup_scene(&wrk);
 
 	int32_t maj, min;
 	check_gl_version(&maj, &min);
@@ -360,22 +383,23 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 	MSG msg;
 	while (gRunning) {		
 		while (GetMessage(&msg, NULL, 0, 0) > 0) {
-			display_scene(plat->hdc);
+			display_scene(plat->hdc, &wrk);
 			TranslateMessage(&msg);
 			DispatchMessage(&msg);
 		}
 	}
 
-	glDeleteVertexArrays(1, &VAO);
-	glDeleteBuffers(1, &VBO);
+	// shutdown stuff
+	glDeleteVertexArrays(1, &wrk.VAO);
+	glDeleteBuffers(1, &wrk.VBO);
 
 	wglMakeCurrent(NULL, NULL);
 	ReleaseDC(plat->hwnd, plat->hdc);
 	wglDeleteContext(plat->hglrc);
 	DestroyWindow(plat->hwnd);
-	free(plat);
-	plat = NULL;
-
+	if (plat) { free(plat); plat = NULL; }	
+	if (wi) { free(wi);	wi = NULL; }
+	
 	return msg.wParam;
 }
 
