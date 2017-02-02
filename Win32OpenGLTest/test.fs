@@ -1,22 +1,30 @@
 #version 330 core
 
-uniform vec3 input_color;
-uniform vec3 light_pos;
-out vec4 color;
+precision mediump float;
 
-/* varying vec3 surfaceNormal;
-varying vec3 v; */
+uniform vec3 light_pos;
+uniform vec3 input_color;
+
+varying vec3 v_Position;
+//varying vec4 v_Color;
+varying vec3 v_Normal;
+
+out vec4 frag_color;
+
 
 void main()
 {
-	vec3 lightColor = vec3(1.0f);
-	float ambientStrength = 0.25;	
-	vec3 ambient = ambientStrength * lightColor;
-	vec3 result = ambient * input_color;
-
-	/* vec3 lightNorm = normalize(light_pos - v);	
-	vec3 diffuseLight = vec4(0.0f, 0.0f, 0.0f, 1.0f) * max(dot(surfaceNormal, lightNorm), 0.0);	 */
-	//color = vec4(diffuseLight, 1.0);
+	float distance = length(light_pos - v_Position);
+	vec3 lightVec = normalize(light_pos - v_Position);
+	float diffuse = max(dot(v_Normal, lightVec), 0.1);
+	float intensity = 3.0f;
+	diffuse = diffuse * (intensity / (1.0 + (0.25 * distance * distance)));	
 	
-	color = vec4(result, 1.0f);
+	frag_color = vec4((input_color * diffuse), 1.0f);
+
+	/* float ambientStrength = 0.75f;
+	vec3 ambient = ambientStrength * input_color;
+	vec3 result = ambient * input_color;		
+	frag_color = vec4(result, 1.0f); */
+	
 }

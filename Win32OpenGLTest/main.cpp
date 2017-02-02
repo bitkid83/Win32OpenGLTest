@@ -42,6 +42,8 @@
 	-1.0f, 1.0f, -1.0f
 };
  
+ GLfloat gNormals[12] = { 0.0 };
+
 static const int32_t gAttribs[] =
 {
 	WGL_CONTEXT_MAJOR_VERSION_ARB, 4,
@@ -50,8 +52,32 @@ static const int32_t gAttribs[] =
 	0
 };
 
-const float gFov = 90.0f;
+const float gFov = 80.0f;
 bool gRunning = true;
+
+void calculate_normals()
+{
+	glm::vec3 vector1, vector2;
+	glm::vec3 norm;
+	int count = 0;
+	int nindex = 0;
+			
+	for (int j = 0; j < (j + 9) && (j < 36); j += 9) {
+		vector1.x = gVertices[j] - gVertices[j + 3];
+		vector1.y = gVertices[j + 1] - gVertices[j + 4];
+		vector1.z = gVertices[j + 2] - gVertices[j + 5];
+		
+		vector2.x = gVertices[j + 3] - gVertices[j + 6];
+		vector2.y = gVertices[j + 4] - gVertices[j + 7];
+		vector2.z = gVertices[j + 5] - gVertices[j + 8];
+		norm = glm::cross(vector1, vector2);
+
+		gNormals[nindex] = norm.x;
+		gNormals[nindex + 1] = norm.y;
+		gNormals[nindex + 2] = norm.z;
+		nindex += 3;
+	}
+}
 
 LONG WINAPI WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 
@@ -73,6 +99,7 @@ struct gl_platform_ctx {
 struct gl_workingdata {
 	GLuint VBO;
 	GLuint VAO;
+	GLuint NORM;
 	GLuint shaderProg;
 };
 
@@ -257,77 +284,103 @@ void setup_scene(gl_workingdata *gldata)
 
 	// vertex buffer object	
 	glGenVertexArrays(1, &gldata->VAO);
-	glGenBuffers(1, &gldata->VBO);	
-	
-	glBindBuffer(GL_ARRAY_BUFFER, gldata->VBO);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(gVertices), gVertices, GL_STATIC_DRAW);
+	glGenBuffers(1, &gldata->VBO);
+	glGenBuffers(1, &gldata->NORM);
 
 	glBindVertexArray(gldata->VAO);
-	{
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), (GLvoid *)0);		
+	{		
 		glEnableVertexAttribArray(0);
+		glBindBuffer(GL_ARRAY_BUFFER, gldata->VBO);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), (GLvoid *)0);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(gVertices), gVertices, GL_STATIC_DRAW);
+		
+		glEnableVertexAttribArray(1);
+		glBindBuffer(GL_ARRAY_BUFFER, gldata->NORM);
+		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), (GLvoid *)0);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(gNormals), gNormals, GL_STATIC_DRAW);
 	}
 	glBindVertexArray(0);
 
 	//glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);	
+	glEnable(GL_DEPTH_TEST);
+	//glEnable(GL_CULL_FACE);
+
+	calculate_normals();
 }
 
 
 
-void display_scene(HDC hdc, gl_workingdata *gldata)
+void display_scene(gl_platform_ctx *plat, gl_workingdata *gldata)
 {	
+	POINT mouse;
+	float mxRatio = 0.0f;
+	float myRatio = 0.0f;
+	GetCursorPos(&mouse);
+	if (ScreenToClient(plat->hwnd, &mouse)) {
+		mxRatio = (float)((float)mouse.x / (float)WINDOW_WIDTH);
+		myRatio = (float)((float)mouse.y / (float)WINDOW_HEIGHT);
+	}
+	
 	if (!gldata) { return; } // oops! D:
 	GLuint prog = gldata->shaderProg;
 	GLuint vao = gldata->VAO;
-
-	POINT p;
-	GetCursorPos(&p);
 	
 	glUseProgram(prog);
 		
+	// transform matrices
+	glm::mat4 model, view, proj, mvp, mv;
+
 	// camera
 	glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 3.0f);
 	glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
 	glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
 
-	// transform matrices
-	glm::mat4 model, view, proj;
-
-	glm::vec3 lightPosition = glm::vec3(0.0f, 5.5f, -15.5f);
+	// light
+	//glm::vec3 lightPosition = glm::vec3(mxRatio, myRatio, mxRatio / myRatio * 1.5f);
+	glm::vec3 lightPosition = glm::vec3(0.f, 0.f, 2.5f);
+	
+	// shader locations
+	//GLint modelLoc = glGetUniformLocation(prog, "model");
+	//GLint viewLoc = glGetUniformLocation(prog, "view");
+	//GLint projLoc = glGetUniformLocation(prog, "projection");
+	GLint mvpLoc = glGetUniformLocation(prog, "mvp");
+	GLint mvLoc = glGetUniformLocation(prog, "mv");
+	GLint colorLoc = glGetUniformLocation(prog, "input_color");
 	GLint lightLoc = glGetUniformLocation(prog, "light_pos");
-	glUniform3fv(lightLoc, 1, glm::value_ptr(lightPosition));
 
 	
-	GLint modelLoc = glGetUniformLocation(prog, "model");
-	GLint viewLoc = glGetUniformLocation(prog, "view");
-	GLint projLoc = glGetUniformLocation(prog, "projection");
-
+	// matrix transforms
 	rot += 0.0001f;
 	if (rot >= 360.0f) { rot = 0.0f; }
-	
-	model = glm::rotate(model, rot, glm::vec3(1.0f, 0.0f, 0.0f)); // rotate the model
+	model = glm::rotate(model, rot, glm::vec3(0.0f, 1.0f, 0.f)); // rotate the model
+	model = glm::rotate(model, mxRatio * 4.f, glm::vec3(0.f, 0.f, 1.f)); // rotate the model
 	view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp); // camera looks down -z axis, oriented on y axis
 	//view = glm::rotate(view, -rot, glm::vec3(0.0f, 0.0f, 1.0f)); // rotate the view
 	//view = glm::translate(view, glm::vec3(0.0f, 0.0f, -5.0f)); // translate the view on -z axis
-
 	proj = glm::perspective(gFov, (float)WINDOW_WIDTH / (float)WINDOW_HEIGHT, 0.1f, 100.0f);
+	mv = view * model;
+	mvp = proj * view * model;
 
-	glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-	glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-	glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
-
-	//glUniform3f(uniformColor, (float)(fabs(p.x / 2.0f) / 10000.f) * 2, (float)(p.y / 10000.f) * 2, 0.0f);
-	GLint uniformColor = glGetUniformLocation(prog, "input_color");
-	glUniform3f(uniformColor, 1.0f, 0.0f, 0.0f);
+	// set shader uniforms
+	//glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+	//glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+	//glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
+	glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, glm::value_ptr(mvp));
+	glUniformMatrix4fv(mvLoc, 1, GL_FALSE, glm::value_ptr(mvp));
+	glUniform3fv(lightLoc, 1, glm::value_ptr(lightPosition));
+	glUniform3f(colorLoc, 1.0f, 0.0f, 0.0f);
+	
+	// clear screen
 	glClearColor(0, 0, 0, 255);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);	
 	
+	// draw!
 	glBindVertexArray(vao);
 	glDrawArrays(GL_TRIANGLES, 0, 12);	
 	glBindVertexArray(0);
 
-	SwapBuffers(hdc); //glFlush();
+	SwapBuffers(plat->hdc); // glFlush();
 }
 
 void check_gl_version(int32_t *maj, int32_t *min)
@@ -374,8 +427,8 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 	GLuint vertexShader = compile_shader_from_file("test.vs", GL_VERTEX_SHADER);
 	GLuint fragmentShader = compile_shader_from_file("test.fs", GL_FRAGMENT_SHADER);
 	wrk.shaderProg = create_shader_program(&vertexShader, &fragmentShader);
-
 	setup_scene(&wrk);
+
 
 	int32_t maj, min;
 	check_gl_version(&maj, &min);
@@ -383,7 +436,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 	MSG msg;
 	while (gRunning) {		
 		while (GetMessage(&msg, NULL, 0, 0) > 0) {
-			display_scene(plat->hdc, &wrk);
+			display_scene(plat, &wrk);
 			TranslateMessage(&msg);
 			DispatchMessage(&msg);
 		}
