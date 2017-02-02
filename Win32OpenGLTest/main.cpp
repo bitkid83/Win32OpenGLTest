@@ -52,7 +52,8 @@ static const int32_t gAttribs[] =
 	0
 };
 
-const float gFov = 80.0f;
+const float gFov = 1.5708f;
+
 bool gRunning = true;
 
 void calculate_normals()
@@ -205,7 +206,7 @@ static inline bool set_pixel_format_and_swap_chain(HDC hdc)
 	pfd.cDepthBits = 24;
 	pfd.cStencilBits = 8;
 	pfd.iLayerType = PFD_MAIN_PLANE;
-	pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL; // | PFD_DOUBLEBUFFER;
+	pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
 
 	int format_index = ChoosePixelFormat(hdc, &pfd);
 	if (!format_index) {
@@ -310,6 +311,8 @@ void setup_scene(gl_workingdata *gldata)
 }
 
 
+float gLightSin = 0.0f;
+float gLightCos = 0.0f;
 
 void display_scene(gl_platform_ctx *plat, gl_workingdata *gldata)
 {	
@@ -317,9 +320,11 @@ void display_scene(gl_platform_ctx *plat, gl_workingdata *gldata)
 	float mxRatio = 0.0f;
 	float myRatio = 0.0f;
 	GetCursorPos(&mouse);
-	if (ScreenToClient(plat->hwnd, &mouse)) {
-		mxRatio = (float)((float)mouse.x / (float)WINDOW_WIDTH);
-		myRatio = (float)((float)mouse.y / (float)WINDOW_HEIGHT);
+	if (plat) {
+		if (ScreenToClient(plat->hwnd, &mouse)) {
+			mxRatio = (float)((float)mouse.x / (float)WINDOW_WIDTH);
+			myRatio = (float)((float)mouse.y / (float)WINDOW_HEIGHT);
+		}
 	}
 	
 	if (!gldata) { return; } // oops! D:
@@ -336,51 +341,60 @@ void display_scene(gl_platform_ctx *plat, gl_workingdata *gldata)
 	glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
 	glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
 
-	// light
-	//glm::vec3 lightPosition = glm::vec3(mxRatio, myRatio, mxRatio / myRatio * 1.5f);
-	glm::vec3 lightPosition = glm::vec3(0.f, 0.f, 3.f);
+	// light	
+	gLightSin = sin(rot) * 2.f;
+	gLightCos = cos(rot) + 2.f;
+	glm::vec3 lightPosition = glm::vec3(gLightSin, 0.f, gLightCos);
 	
 	// shader locations
-	//GLint modelLoc = glGetUniformLocation(prog, "model");
-	//GLint viewLoc = glGetUniformLocation(prog, "view");
-	//GLint projLoc = glGetUniformLocation(prog, "projection");
+	GLint modelLoc = glGetUniformLocation(prog, "model");
+	GLint viewLoc = glGetUniformLocation(prog, "view");
+	GLint projLoc = glGetUniformLocation(prog, "projection");
 	GLint mvpLoc = glGetUniformLocation(prog, "mvp");
 	GLint mvLoc = glGetUniformLocation(prog, "mv");
 	GLint colorLoc = glGetUniformLocation(prog, "input_color");
 	GLint lightLoc = glGetUniformLocation(prog, "light_pos");
-
 	
 	// matrix transforms
-	rot += 0.0001f;
+	rot += 0.01f;
 	if (rot >= 360.0f) { rot = 0.0f; }
 	model = glm::rotate(model, rot, glm::vec3(0.0f, 1.0f, 0.f)); // rotate the model
-	model = glm::rotate(model, mxRatio * 4.f, glm::vec3(0.f, 0.f, 1.f)); // rotate the model
 	view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp); // camera looks down -z axis, oriented on y axis
+	//view = glm::lookAt(lightPosition, lightPosition-cameraPos, cameraUp); // camera looks down -z axis, oriented on y axis
+	//view = glm::translate(view, glm::vec3(3.0f, 0.0f, -1.0f)); // translate the view on -z axis
+	//model = glm::rotate(model, mxRatio * 4.f, glm::vec3(0.f, 0.f, 1.f)); // rotate the model
 	//view = glm::rotate(view, -rot, glm::vec3(0.0f, 0.0f, 1.0f)); // rotate the view
-	//view = glm::translate(view, glm::vec3(0.0f, 0.0f, -5.0f)); // translate the view on -z axis
 	proj = glm::perspective(gFov, (float)WINDOW_WIDTH / (float)WINDOW_HEIGHT, 0.1f, 100.0f);
 	mv = view * model;
 	mvp = proj * view * model;
 
 	// set shader uniforms
-	//glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-	//glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-	//glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
+	glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+	glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+	glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
 	glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, glm::value_ptr(mvp));
 	glUniformMatrix4fv(mvLoc, 1, GL_FALSE, glm::value_ptr(mvp));
+
+
 	glUniform3fv(lightLoc, 1, glm::value_ptr(lightPosition));
-	glUniform3f(colorLoc, 0.05f, 0.f, 0.f);
+	glUniform3f(colorLoc, 1.0f, 0.f, 0.f);
 	
 	// clear screen
 	glClearColor(0, 0, 0, 255);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);	
 	
+	glPointSize(6.0f);
+
 	// draw!
 	glBindVertexArray(vao);
-	glDrawArrays(GL_TRIANGLES, 0, 12);	
+	glDrawArrays(GL_TRIANGLES, 0, 12);
+	glDrawArrays(GL_POINTS, 0, 12);
+	//glDrawArrays(GL_LINES, 0, 12);
+	
 	glBindVertexArray(0);
 
-	SwapBuffers(plat->hdc); // glFlush();
+	if (plat) SwapBuffers(plat->hdc);
+	//glFlush();
 }
 
 void check_gl_version(int32_t *maj, int32_t *min)
