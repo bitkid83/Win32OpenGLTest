@@ -338,7 +338,7 @@ void display_scene(gl_platform_ctx *plat, gl_workingdata *gldata)
 
 	// light
 	//glm::vec3 lightPosition = glm::vec3(mxRatio, myRatio, mxRatio / myRatio * 1.5f);
-	glm::vec3 lightPosition = glm::vec3(0.f, 0.f, 2.5f);
+	glm::vec3 lightPosition = glm::vec3(0.f, 0.f, 3.f);
 	
 	// shader locations
 	//GLint modelLoc = glGetUniformLocation(prog, "model");
@@ -369,7 +369,7 @@ void display_scene(gl_platform_ctx *plat, gl_workingdata *gldata)
 	glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, glm::value_ptr(mvp));
 	glUniformMatrix4fv(mvLoc, 1, GL_FALSE, glm::value_ptr(mvp));
 	glUniform3fv(lightLoc, 1, glm::value_ptr(lightPosition));
-	glUniform3f(colorLoc, 1.0f, 0.0f, 0.0f);
+	glUniform3f(colorLoc, 0.05f, 0.f, 0.f);
 	
 	// clear screen
 	glClearColor(0, 0, 0, 255);

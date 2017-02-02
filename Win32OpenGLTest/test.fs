@@ -16,9 +16,9 @@ void main()
 {
 	float distance = length(light_pos - v_Position);
 	vec3 lightVec = normalize(light_pos - v_Position);
-	float diffuse = max(dot(v_Normal, lightVec), 0.1);
-	float intensity = 3.0f;
-	diffuse = diffuse * (intensity / (1.0 + (0.25 * distance * distance)));	
+	float diffuse = max(dot(v_Normal, lightVec), 0.25);
+	float intensity = 75.0f;
+	diffuse = diffuse * (intensity / (1.0 + (3.0 * distance * distance)));	
 	
 	frag_color = vec4((input_color * diffuse), 1.0f);
 
